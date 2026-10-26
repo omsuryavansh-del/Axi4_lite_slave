@@ -51,12 +51,9 @@ module tb;
     );
     
     task write_fifo(input write_en, input TX_data, output full);
-
         if(write_en) begin 
             fifo.push = TX_data;
         end
-        
-
     endtask
     
     initial begin 
@@ -78,6 +75,7 @@ module tb;
         repeat (2) @(posedge aclk);
         wvalid <= 1;
 
+        write_fifo(write_en,TX_data,full);
         $display("awready = %0d, wready = %0d",awready,wready);
         repeat (6) @(posedge aclk);
         bready <= 1;

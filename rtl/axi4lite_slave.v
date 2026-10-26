@@ -92,17 +92,18 @@ module axi4lite (
                 if(!full) write_en <= 1;
                 else write_en <= 0;
 
-                if(write_en == 1 && address_latch == 32'h08) begin
+                if(!full && address_latch == 32'h08) begin
                     Tx_data <= data_latch;
                     wdata_resp <= 1;
+                    write_en <= 1;
                 end
 
-                if(write_en == 1 && address_latch == 32'h00) begin
+                if(address_latch == 32'h00) begin
                     control_register <= data_latch;
                     control_resp <= 1;
                 end
 
-                if(write_en == 1 && (address_latch == 32'h0c || address_latch == 32'h04)) begin
+                if(!full && (address_latch == 32'h0c || address_latch == 32'h04)) begin
                     wrong_address <= 1;
                 end
             end

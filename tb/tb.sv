@@ -24,9 +24,9 @@ module tb;
     reg full;
     wire write_en;
     
-    reg [31:0] fifo [$];
+    reg [31:0] fifo [$:8];
 
-    reg [31:0] control;
+    reg [31:0] control_reg;
 	
     
     axi4lite dut ( 
@@ -50,9 +50,11 @@ module tb;
     .write_en(write_en)
     );
     
-    task write_fifo(input write_en, input TX_data, output full);
-        if(write_en) begin 
-            fifo.push = TX_data;
+    task write_fifo(input  write_en, input [31:0] TX_data, output full);
+        begin
+            if(write_en) begin 
+                fifo.push_back(TX_data);
+            end
         end
     endtask
     
@@ -72,16 +74,27 @@ module tb;
         $display("awready = %0d, wready = %0d",awready,wready);
         repeat (5) @(posedge aclk);
         data_in <= $urandom;
+        write_fifo(write_en, Tx_data ,full);
         repeat (2) @(posedge aclk);
         wvalid <= 1;
-
-        write_fifo(write_en,TX_data,full);
-        $display("awready = %0d, wready = %0d",awready,wready);
+        write_fifo(write_en, Tx_data ,full);
+        $display("awready = %0d, wready = %0d, fifo_data = %0h",awready,wready,fifo.pop_front());
         repeat (6) @(posedge aclk);
         bready <= 1;
-
+        write_fifo(write_en, Tx_data ,full);
         $display("awready = %0d, wready = %0d, ",awready,wready);
+        repeat(4) @(posedge aclk);
+        data_in <= $urandom;
+        wvalid <= 1;
+        write_fifo(write_en, Tx_data ,full);
+        $display("awready = %0d, wready = %0d, fifo_data = %0h",awready,wready,fifo.pop_front());
+        repeat (6) @(posedge aclk);
+        awaddr <= 32'Hx00;
+        awvalid <= 1;
+        write_fifo(write_en, Tx_data ,full);
+        $display("awready = %0d, wready = %0d, fifo_data = %0h",awready,wready,fifo.pop_front());
         repeat (5) @(posedge aclk);
+
         $finish;
 
     end

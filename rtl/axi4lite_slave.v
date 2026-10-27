@@ -45,7 +45,6 @@ module axi4lite (
     reg wdata_resp;
     reg control_resp;
     reg wrong_address;
-    reg resp_check;
 
     reg [1:0] state, next_state;
 
@@ -89,9 +88,6 @@ module axi4lite (
             end
 
             WRITE: begin
-                if(!full) write_en <= 1;
-                else write_en <= 0;
-
                 if(!full && address_latch == 32'h08) begin
                     Tx_data <= data_latch;
                     wdata_resp <= 1;
@@ -110,16 +106,17 @@ module axi4lite (
 
             RESPONSE: begin
                 if(wdata_resp || control_resp) begin
-                    bresp <= 00;
-                    resp_check <= 1;
+                    bresp <= 2'b00;
+                    bvalid <= 1;
+                    write_en <= 0;
                 end
                 else if (wrong_address) begin
-                    bresp <= 10;
-                    resp_check <= 1;
+                    bresp <= 2'b10;
+                    bvalid <= 1;
                 end
                 else begin
-                    bresp <= 11;
-                    resp_check <= 1;
+                    bresp <= 2'b11;
+                    bvalid <= 1;
                 end
             end
         endcase
@@ -127,28 +124,28 @@ module axi4lite (
 
     always @(*) begin
         if (!aresetn) begin
-            next_state <= IDLE;
+            next_state = IDLE;
         end
         else begin
             case(state)
                 IDLE: begin
                     if(awvalid && wvalid) next_state = CAPTURE;
-                    else next_state <= IDLE;
+                    else next_state = IDLE;
                 end
 
                 CAPTURE: begin
                     if(handshake) next_state = WRITE;
-                    else next_state <= CAPTURE;
+                    else next_state = CAPTURE;
                 end
 
                 WRITE: begin
                     if (wdata_resp || control_resp || wrong_address) next_state <= RESPONSE;
-                    else next_state <= WRITE;
+                    else next_state = WRITE;
                 end
 
                 RESPONSE: begin
-                    if (resp_check) next_state <= IDLE;
-                    else next_state <= RESPONSE;
+                    if (bready) next_state = IDLE;
+                    else next_state = RESPONSE;
                 end 
             endcase
         end

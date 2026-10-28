@@ -55,6 +55,8 @@ module tb;
             if(write_en) begin 
                 fifo.push_back(TX_data);
             end
+            if (fifo.size() > 7) full = 1'b1;
+            else full = 1'b0;
         end
     endtask
     
@@ -68,7 +70,8 @@ module tb;
 	    aresetn <= 0;
 	    repeat(4) @(posedge aclk);
 	    aresetn <= 1;
-        awaddr  <=  32'Hx08;
+        full <= 0;
+        awaddr  <=  32'h0000_0008;
         repeat (2) @(posedge aclk);
         awvalid <= 1;
         $display("awready = %0d, wready = %0d",awready,wready);
@@ -79,7 +82,10 @@ module tb;
         wvalid <= 1;
         write_fifo(write_en, Tx_data ,full);
         $display("awready = %0d, wready = %0d, fifo_data = %0h",awready,wready,fifo.pop_front());
-        repeat (6) @(posedge aclk);
+        repeat (2) @(posedge aclk);
+        write_fifo(write_en, Tx_data ,full);
+        $display("awready = %0d, wready = %0d, fifo_data = %0h",awready,wready,fifo.pop_front());
+        repeat (4) @(posedge aclk);
         bready <= 1;
         write_fifo(write_en, Tx_data ,full);
         $display("awready = %0d, wready = %0d, ",awready,wready);
@@ -89,7 +95,7 @@ module tb;
         write_fifo(write_en, Tx_data ,full);
         $display("awready = %0d, wready = %0d, fifo_data = %0h",awready,wready,fifo.pop_front());
         repeat (6) @(posedge aclk);
-        awaddr <= 32'Hx00;
+        awaddr <= 32'h0000_0000;
         awvalid <= 1;
         write_fifo(write_en, Tx_data ,full);
         $display("awready = %0d, wready = %0d, fifo_data = %0h",awready,wready,fifo.pop_front());

@@ -63,63 +63,67 @@ module axi4lite (
     end
 
     always @(posedge aclk or negedge aresetn) begin
-        case(state)
-            IDLE: begin
-                awready <= 0;
-                wready <= 0;
-                bvalid <= 0;
-                write_en <= 0;
-            end
-
-            CAPTURE: begin
-                if(awvalid && wvalid) begin
-                    awready <= 1;
-                    wready <= 1;
-                end
-
-                if(awready && wready) begin
-                    address_latch <= awaddr;
-                    data_latch <= data_in;
+        if (!aresetn) begin 
+            state <= IDLE;
+        end else begin
+            case(state)
+                IDLE: begin
                     awready <= 0;
                     wready <= 0;
-                    handshake <= 1;
-                end
-                else handshake <= 0;
-            end
-
-            WRITE: begin
-                if(!full && address_latch == 32'h08) begin
-                    Tx_data <= data_latch;
-                    wdata_resp <= 1;
-                    write_en <= 1;
-                end
-
-                if(address_latch == 32'h00) begin
-                    control_register <= data_latch;
-                    control_resp <= 1;
-                end
-
-                if(!full && (address_latch == 32'h0c || address_latch == 32'h04)) begin
-                    wrong_address <= 1;
-                end
-            end
-
-            RESPONSE: begin
-                if(wdata_resp || control_resp) begin
-                    bresp <= 2'b00;
-                    bvalid <= 1;
+                    bvalid <= 0;
                     write_en <= 0;
+                    handshake <= 0;
                 end
-                else if (wrong_address) begin
-                    bresp <= 2'b10;
-                    bvalid <= 1;
+
+                CAPTURE: begin
+                    if(awvalid && wvalid) begin
+                        awready <= 1;
+                        wready <= 1;
+                    end
+
+                    if(awready && wready) begin
+                        address_latch <= awaddr;
+                        data_latch <= data_in;
+                        awready <= 0;
+                        wready <= 0;
+                        handshake <= 1;
+                    end
+                    else handshake <= 0;
                 end
-                else begin
-                    bresp <= 2'b11;
-                    bvalid <= 1;
+
+                WRITE: begin
+                    if(!full && (address_latch == 32'h0000_0008)) begin
+                        Tx_data <= data_latch;
+                        wdata_resp <= 1;
+                        write_en <= 1;
+                    end
+
+                    if(address_latch == 32'h0000_0000) begin
+                        control_register <= data_latch;
+                        control_resp <= 1;
+                    end
+
+                    if((address_latch == 32'h0000_000c) || (address_latch == 32'h0000_0004)) begin
+                        wrong_address <= 1;
+                    end
                 end
-            end
-        endcase
+
+                RESPONSE: begin
+                    if(wdata_resp || control_resp) begin
+                        bresp <= 2'b00;
+                        bvalid <= 1;
+                    end
+                    else if (wrong_address) begin
+                        bresp <= 2'b10;
+                        bvalid <= 1;
+                    end
+                    else begin
+                        bresp <= 2'b11;
+                        bvalid <= 1;
+                    end
+                end
+            endcase
+        end
     end
 
     always @(*) begin

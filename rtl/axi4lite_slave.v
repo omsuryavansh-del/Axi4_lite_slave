@@ -18,7 +18,7 @@ module axi4lite (
     output reg [1:0] bresp,
     output reg bvalid,
     input bready,
-/*
+
     // address read channel lines
     input [31:0] araddr,
     input arvalid,
@@ -29,29 +29,34 @@ module axi4lite (
     output reg [1:0] rresp,
     output reg rvalid,
     input rready,
-*/
+
     //async fifo lines
     input full,
+    input empty,
     output reg [31:0] Tx_data,
-    output reg write_en
+    output reg write_en,
+    output reg read_en,
+    input [31:0] Rx_data
 );
 
     reg [31:0] address_latch;
     reg [31:0] data_latch;
-
     reg [31:0] control_register;
+    reg write_success;
 
-    reg handshake;
-    reg wdata_resp;
-    reg control_resp;
-    reg wrong_address;
-
+    reg [31:0] raddress_latch;
     reg [1:0] state, next_state;
+    reg [1:0] state_r, next_state_r;
 
     localparam IDLE = 2'b00,
                CAPTURE = 2'b01,
                WRITE = 2'b10,
                RESPONSE = 2'b11;
+    
+    localparam IDLE_R = 2'b00,
+               CAPTURE_R = 2'b01,
+               DONE = 2'b10;
+
 
     always @(posedge aclk or negedge aresetn) begin
         if (!aresetn) begin
@@ -61,7 +66,7 @@ module axi4lite (
             state <= next_state;
         end
     end
-
+//write block
     always @(posedge aclk or negedge aresetn) begin
         if (!aresetn) begin 
             state <= IDLE;
@@ -72,55 +77,49 @@ module axi4lite (
                     wready <= 0;
                     bvalid <= 0;
                     write_en <= 0;
-                    handshake <= 0;
                 end
 
                 CAPTURE: begin
-                    if(awvalid && wvalid) begin
-                        awready <= 1;
-                        wready <= 1;
-                    end
-
+                    awready <= 1;
+                    wready <= 1;
                     if(awready && wready) begin
                         address_latch <= awaddr;
                         data_latch <= data_in;
                         awready <= 0;
                         wready <= 0;
-                        handshake <= 1;
                     end
-                    else handshake <= 0;
                 end
 
                 WRITE: begin
-                    if(!full && (address_latch == 32'h0000_0008)) begin
-                        Tx_data <= data_latch;
-                        wdata_resp <= 1;
-                        write_en <= 1;
-                    end
-
-                    if(address_latch == 32'h0000_0000) begin
-                        control_register <= data_latch;
-                        control_resp <= 1;
-                    end
-
-                    if((address_latch == 32'h0000_000c) || (address_latch == 32'h0000_0004)) begin
-                        wrong_address <= 1;
+                    if(address_latch[1:0] == 2'b00) begin   
+                        case (address_latch[3:2])
+                            2'b00: begin
+                                control_register <= data_latch;
+                                bresp <= 2'b00;
+                                write_success <= 1'b1;
+                            end
+                            2'b10: begin
+                                if(!full) begin
+                                    Tx_data <= data_latch;
+                                    write_en <= 1'b1;
+                                    bresp <= 2'b00;
+                                    write_success <= 1'b1;
+                                end
+                            end
+                            default: begin
+                                bresp <= 2'b10;
+                                write_success <= 1'b1;
+                            end
+                        endcase
+                    end else begin
+                        bresp <= 2'b10;
+                        write_success <= 1'b1;
                     end
                 end
 
                 RESPONSE: begin
-                    if(wdata_resp || control_resp) begin
-                        bresp <= 2'b00;
-                        bvalid <= 1;
-                    end
-                    else if (wrong_address) begin
-                        bresp <= 2'b10;
-                        bvalid <= 1;
-                    end
-                    else begin
-                        bresp <= 2'b11;
-                        bvalid <= 1;
-                    end
+                    bvalid <= 1'b1;
+                    write_en <= 1'b0;
                 end
             endcase
         end
@@ -138,12 +137,12 @@ module axi4lite (
                 end
 
                 CAPTURE: begin
-                    if(handshake) next_state = WRITE;
+                    if(awready && wready) next_state = WRITE;
                     else next_state = CAPTURE;
                 end
 
                 WRITE: begin
-                    if (wdata_resp || control_resp || wrong_address) next_state <= RESPONSE;
+                    if (write_success) next_state <= RESPONSE;
                     else next_state = WRITE;
                 end
 
@@ -155,5 +154,57 @@ module axi4lite (
         end
     end
 
+//read block
+
+    always @(posedge aclk or negedge aresetn) begin 
+        if(!aresetn) begin
+            state_r <= IDLE;
+        end else begin
+            state_r <= next_state_r;
+        end
+    end
+
+    always @(posedge aclk or negedge aresetn) begin
+        if(!aresetn) begin
+            state_r <= IDLE;
+        end else begin
+            case(state_r) 
+                IDLE_R: begin
+                    arready <= 0;
+                    read_en <= 0;
+                end
+                CAPTURE_R: begin     
+                    arready <= 1'b1;  
+                    if(arready) begin
+                        raddress_latch <= araddr;
+                    end
+                end
+                DONE: begin
+                    if(!empty && raddress_latch == 32'h0c) begin
+                        read_en <= 1'b1;
+                        rresp <= 2'b00;
+                    end else begin
+                        rresp <= 2'b10;
+                        bvalid <= 1'b1;
+                    end
+ 
+                    if(read_en) begin
+                        rdata <= Rx_data;
+                        read_en <= 1'b0;
+                        bvalid <= 1'b1;
+                    end
+                end
+            endcase
+        end
+    end
+
+    always @(*) begin 
+        case(state_r)
+            IDLE_R: next_state_r = arvalid? CAPTURE_R:IDLE_R;
+            CAPTURE_R: next_state_r = arready? DONE: CAPTURE_R;
+            DONE: next_state_r = bready? IDLE:DONE;
+        endcase
+    end
+    
 endmodule
 

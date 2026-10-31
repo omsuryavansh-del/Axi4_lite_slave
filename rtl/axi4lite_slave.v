@@ -44,7 +44,9 @@ module axi4lite (
     reg [31:0] control_register;
     reg write_success;
 
+    reg read_success;
     reg [31:0] raddress_latch;
+
     reg [1:0] state, next_state;
     reg [1:0] state_r, next_state_r;
 
@@ -55,7 +57,8 @@ module axi4lite (
     
     localparam IDLE_R = 2'b00,
                CAPTURE_R = 2'b01,
-               DONE = 2'b10;
+               READ = 2'b10,
+               DONE = 2'b11;
 
 
     always @(posedge aclk or negedge aresetn) begin
@@ -131,31 +134,15 @@ module axi4lite (
         end
         else begin
             case(state)
-                IDLE: begin
-                    if(awvalid && wvalid) next_state = CAPTURE;
-                    else next_state = IDLE;
-                end
-
-                CAPTURE: begin
-                    if(awready && wready) next_state = WRITE;
-                    else next_state = CAPTURE;
-                end
-
-                WRITE: begin
-                    if (write_success) next_state <= RESPONSE;
-                    else next_state = WRITE;
-                end
-
-                RESPONSE: begin
-                    if (bready) next_state = IDLE;
-                    else next_state = RESPONSE;
-                end 
+                IDLE: next_state = (awvalid & wvalid) ? CAPTURE:IDLE;
+                CAPTURE: next_state = (awready & wready)? WRITE: CAPTURE;
+                WRITE: next_state = (write_success) ? RESPONSE: WRITE;
+                RESPONSE: next_state = bready ? IDLE: RESPONSE;
             endcase
         end
     end
 
 //read block
-
     always @(posedge aclk or negedge aresetn) begin 
         if(!aresetn) begin
             state_r <= IDLE;
@@ -170,29 +157,35 @@ module axi4lite (
         end else begin
             case(state_r) 
                 IDLE_R: begin
-                    arready <= 0;
-                    read_en <= 0;
+                    arready <= 1'b0;
+                    read_en <= 1'b0;
+                    bvalid <= 1'b0;
                 end
+
                 CAPTURE_R: begin     
                     arready <= 1'b1;  
                     if(arready) begin
                         raddress_latch <= araddr;
                     end
                 end
-                DONE: begin
+
+                READ: begin
                     if(!empty && raddress_latch == 32'h0c) begin
                         read_en <= 1'b1;
                         rresp <= 2'b00;
                     end else begin
                         rresp <= 2'b10;
-                        bvalid <= 1'b1;
+                        read_success <= 1'b1;
                     end
- 
                     if(read_en) begin
                         rdata <= Rx_data;
-                        read_en <= 1'b0;
-                        bvalid <= 1'b1;
+                        read_success <= 1'b1;
                     end
+                end
+
+                DONE: begin
+                    read_en <= 1'b0;
+                    bvalid <= 1'b1;
                 end
             endcase
         end
@@ -201,10 +194,10 @@ module axi4lite (
     always @(*) begin 
         case(state_r)
             IDLE_R: next_state_r = arvalid? CAPTURE_R:IDLE_R;
-            CAPTURE_R: next_state_r = arready? DONE: CAPTURE_R;
+            CAPTURE_R: next_state_r = arready? READ:CAPTURE_R;
+            READ: next_state_r = read_success? DONE:READ; 
             DONE: next_state_r = bready? IDLE:DONE;
         endcase
     end
-    
 endmodule
 
